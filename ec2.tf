@@ -1,83 +1,83 @@
-data "aws_ami" "os_image" {
-  owners      = ["099720109477"]
-  most_recent = true
-  filter {
-    name   = "state"
-    values = ["available"]
-  }
-  filter {
-    name   = "name"
-    values = ["ubuntu/images/hvm-ssd/*amd64*"]
-  }
+# Region
+
+provider "aws" {
+
+	region="us-west-2"
+
 }
 
-resource "aws_key_pair" "deployer" {
-  key_name   = "terra-automate-key"
-  public_key = file("terra-key.pub")
+# Key Value pair
+
+resource aws_key_pair my_key_pair {
+
+key_name="terra-automate-key-josh"
+public_key=file("terra-automate-key.pub")
+} 
+
+# VPC Default
+
+resource aws_default_vpc default {
 }
 
-resource "aws_default_vpc" "default" {
+# Security Group 
+
+resource aws_security_group my_security_group {
+
+name="terra-security-group"
+vpc_id= aws_default_vpc.default.id  # interpolation
+description = "this is Inbound and outbound rules for your instance Security group"
+
 }
 
-resource "aws_security_group" "allow_user_to_connect" {
-  name        = "allow TLS"
-  description = "Allow user to connect"
-  vpc_id      = aws_default_vpc.default.id
+# Inbound & Outbount port rules
 
-  ingress {
-    description = "port 22 allow"
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
 
-  egress {
-    description = "allow all outgoing traffic"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
 
-  ingress {
-    description = "port 80 allow"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    description = "port 443 allow"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name = "mysecurity"
-  }
+resource aws_vpc_security_group_ingress_rule allow_http {
+  security_group_id = aws_security_group.my_security_group.id
+  cidr_ipv4         = "0.0.0.0/0"
+  from_port         = 80
+  ip_protocol       = "tcp"
+  to_port           = 80
 }
 
-# user_data is the modern approach for bootstrapping EC2 instances.
-# Provisioners (remote-exec, local-exec) are considered an anti-pattern
-# because they break the declarative model and are not stored in state.
-# Prefer user_data, cloud-init, or configuration management tools (Ansible).
-resource "aws_instance" "testinstance" {
-  ami                    = data.aws_ami.os_image.id
-  instance_type          = var.my_environment == "prd" ? "t2.medium" : "t2.micro"
-  key_name               = aws_key_pair.deployer.key_name
-  vpc_security_group_ids = [aws_security_group.allow_user_to_connect.id]
-  user_data              = file("${path.module}/script.sh")
+resource aws_vpc_security_group_ingress_rule allow_ssh {
+  security_group_id = aws_security_group.my_security_group.id
+  cidr_ipv4         = "0.0.0.0/0"
+  from_port         = 22
+  ip_protocol       = "tcp"
+  to_port           = 22
+}
 
-  tags = {
-    Name = "Terra-Automate"
-  }
 
-  root_block_device {
-    volume_size = 10
-    volume_type = "gp3"
+resource aws_vpc_security_group_egress_rule allow_all_traffic {
+  security_group_id = aws_security_group.my_security_group.id
+  cidr_ipv4         = "0.0.0.0/0"
+  ip_protocol       = "-1" # semantically equivalent to all ports
+}
+
+
+# EC2 instance
+
+
+resource aws_instance my_instance {
+
+	count = 3
+	ami = "ami-0d76b909de1a0595d" # OS AMI ID
+
+	instance_type = "t3.micro" # Instance Type
+
+	key_name = aws_key_pair.my_key_pair.key_name	# Key pair
+
+	vpc_security_group_ids = [aws_security_group.my_security_group.id] # VPC & Security Group
+	
+	# root storage (EBS)
+	root_block_device {
+		volume_size = 10
+		volume_type = "gp3"
+	}
+
+	tags = {
+    Name = "terra-automate-server"
   }
 }
